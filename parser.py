@@ -1,50 +1,37 @@
 import requests
-import pdfplumber
-import json
-from config import DATA_FILE
+from bs4 import BeautifulSoup
 
-PDF_URL = "https://www.poe.pl.ua/disconnection/hrafik-pohodynnoho-vidkliuchennia-elektroenerhii/grafik.pdf"
+URL = "https://www.poe.pl.ua/disconnection/power-outages/"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; TelegramBot/1.0)"
+    "User-Agent": "Mozilla/5.0 (TelegramBot)"
 }
 
-def download_pdf():
-    try:
-        r = requests.get(
-            PDF_URL,
-            headers=HEADERS,
-            timeout=15  # ⬅️ КРИТИЧНО
-        )
-        r.raise_for_status()
-
-        with open("grafik.pdf", "wb") as f:
-            f.write(r.content)
-
-        return "grafik.pdf"
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Ошибка загрузки PDF: {e}")
-        return None
-
-
-def parse_pdf(file_path):
-    if not file_path:
-        return []
-
-    data = []
-    with pdfplumber.open(file_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                data.extend(text.split("\n"))
-
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-
-    return data
-
-
 def update_schedule():
-    pdf = download_pdf()
-    return parse_pdf(pdf)
+    try:
+        r = requests.get(URL, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Сайт недоступен: {e}")
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    result = []
+
+    # Заголовки / новости
+    for block in soup.select("article, .item, .views-row"):
+        title = block.find(["h1", "h2", "h3"])
+        text = block.get_text("\n", strip=True)
+
+        if text and len(text) > 50:
+            if title:
+                result.append(f"📌 {title.get_text(strip=True)}")
+            result.append(text)
+            result.append("")
+
+    # fallback — просто текст страницы
+    if not result:
+        text = soup.get_text("\n", strip=True)
+        result = text.split("\n")
+
+    return result
